@@ -7,7 +7,7 @@ import { AuthGuard } from '@nestjs/passport';
 export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
-  @UseGuards(AuthGuard('jwt')) // Protects this route
+  @UseGuards(AuthGuard('jwt')) // <-- This protects the route
   @Post()
   create(@Body() dto: CreatePostDto, @Request() req: any) {
     return this.postsService.createPost(req.user.userId, dto);
