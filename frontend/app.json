@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "my-social-app",
+    "slug": "my-social-app",
+    "scheme": "myapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-image-picker"
+    ]
+  }
+}
