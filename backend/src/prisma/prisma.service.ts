@@ -9,13 +9,14 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
   constructor() {
     const adapter = new PrismaMariaDb({
       host: '127.0.0.1',
-      port: 8889, // MAMP's default port
+      port: 8889, // 👈 Make sure this matches MAMP (8889 or 3306)
       user: 'root',
-      password: 'pass123', // The new password you just set
+      password: 'pass123', // 👈 Your MAMP password
       database: 'socialdb',
       connectionLimit: 10,
       allowPublicKeyRetrieval: true,
     });
+    
     super({ adapter });
   }
 
