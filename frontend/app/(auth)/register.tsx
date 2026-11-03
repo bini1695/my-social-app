@@ -17,7 +17,15 @@ export default function RegisterScreen() {
       await login(response.data.access_token, response.data.user);
       router.replace('/(tabs)');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.message || 'Registration failed');
+      // 👇 THIS WILL SHOW US THE EXACT ERROR 👇
+      console.log("REGISTER ERROR:", error.response?.data || error.message);
+      
+      // If the error is a Network Error, it means the phone can't reach the backend
+      if (error.message === 'Network Error') {
+        Alert.alert('Network Error', 'Cannot connect to the server. Check your API_URL and Wi-Fi.');
+      } else {
+        Alert.alert('Error', error.response?.data?.message || 'Registration failed');
+      }
     }
   };
 
