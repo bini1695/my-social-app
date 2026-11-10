@@ -1,28 +1,53 @@
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import api from '../../services/api';
 import { API_URL } from '../../constants/config';
 import { useAuth } from '../../context/AuthContext';
 
+type FeedPost = {
+  id: string;
+  caption?: string | null;
+  imageUrl: string;
+  createdAt: string;
+  author?: { username?: string };
+  likes?: { userId: string }[];
+  comments?: { id: string; text: string; author?: { username?: string } }[];
+};
+
 export default function FeedScreen() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  
-  // State to track which post has its comments open
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [sortMode, setSortMode] = useState<'recent' | 'popular'>('recent');
 
-  const { data: posts, isLoading } = useQuery({
+  const { data: posts = [], isLoading, isError, isRefetching, refetch } = useQuery<FeedPost[]>({
     queryKey: ['posts'],
     queryFn: async () => {
       const response = await api.get('/posts');
-      return response.data;
+      return response.data as FeedPost[];
     },
   });
 
-  // LIKE MUTATION
+  const visiblePosts = useMemo(() => {
+    const query = searchText.trim().toLocaleLowerCase();
+    const filteredPosts = posts.filter((post) =>
+      `${post.caption ?? ''} ${post.author?.username ?? ''}`.toLocaleLowerCase().includes(query),
+    );
+
+    return filteredPosts.sort((a, b) => {
+      if (sortMode === 'popular') {
+        const likeDifference = (b.likes?.length ?? 0) - (a.likes?.length ?? 0);
+        if (likeDifference !== 0) return likeDifference;
+      }
+
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [posts, searchText, sortMode]);
+
   const likeMutation = useMutation({
     mutationFn: async ({ postId, isLiked }: { postId: string, isLiked: boolean }) => {
       if (isLiked) await api.delete(`/posts/${postId}/like`);
@@ -31,7 +56,6 @@ export default function FeedScreen() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['posts'] }),
   });
 
-  // COMMENT MUTATION
   const commentMutation = useMutation({
     mutationFn: async ({ postId, text }: { postId: string, text: string }) => {
       await api.post(`/posts/${postId}/comment`, { text });
@@ -39,79 +63,122 @@ export default function FeedScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
       setCommentText('');
-      // We don't close the comments here, so the user can see their new comment immediately
     },
   });
 
   if (isLoading) return <View style={styles.center}><ActivityIndicator size="large" /></View>;
 
+  if (isError) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>Couldn’t load your feed.</Text>
+        <TouchableOpacity onPress={() => refetch()}>
+          <Text style={styles.retryButton}>Try again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <FlatList
-        data={posts}
+        data={visiblePosts}
         keyExtractor={(item) => item.id}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl refreshing={isRefetching} onRefresh={() => { void refetch(); }} />
+        }
+        ListHeaderComponent={
+          <View style={styles.feedHeader}>
+            <Text style={styles.feedTitle}>Your feed</Text>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color="#65676B" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search captions or people"
+                value={searchText}
+                onChangeText={setSearchText}
+                returnKeyType="search"
+              />
+              {searchText.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchText('')} accessibilityLabel="Clear search">
+                  <Ionicons name="close-circle" size={20} color="#8A8D91" />
+                </TouchableOpacity>
+              )}
+            </View>
+            <View style={styles.sortRow}>
+              {(['recent', 'popular'] as const).map((mode) => (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.sortButton, sortMode === mode && styles.sortButtonActive]}
+                  onPress={() => setSortMode(mode)}
+                >
+                  <Text style={[styles.sortButtonText, sortMode === mode && styles.sortButtonTextActive]}>
+                    {mode === 'recent' ? 'Recent' : 'Popular'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        }
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>
+            {searchText.trim() ? 'No posts match your search.' : 'No posts yet. Be the first to share!'}
+          </Text>
+        }
         renderItem={({ item }) => {
-          const hasLiked = item.likes?.some((like: any) => like.userId === user?.id);
-          const likeCount = item.likes?.length || 0;
-          const commentCount = item.comments?.length || 0;
-          
-          // Check if THIS specific post's comments are currently open
-          const isCommenting = activeCommentPostId === item.id; 
+          const hasLiked = item.likes?.some((like) => like.userId === user?.id) ?? false;
+          const likeCount = item.likes?.length ?? 0;
+          const commentCount = item.comments?.length ?? 0;
+          const isCommenting = activeCommentPostId === item.id;
 
           return (
             <View style={styles.postCard}>
-              {/* HEADER */}
               <View style={styles.header}>
                 <View style={styles.avatarPlaceholder} />
                 <Text style={styles.username}>@{item.author?.username}</Text>
               </View>
-              
-              {/* IMAGE */}
+
               <Image source={{ uri: item.imageUrl.replace('http://localhost:3000', API_URL) }} style={styles.image} />
-              
-              {/* ACTION BUTTONS */}
+
               <View style={styles.actionRow}>
-                <TouchableOpacity 
-                  style={styles.actionButton} 
+                <TouchableOpacity
+                  style={styles.actionButton}
                   onPress={() => likeMutation.mutate({ postId: item.id, isLiked: hasLiked })}
+                  disabled={likeMutation.isPending}
                 >
-                  <Ionicons 
-                    name={hasLiked ? "thumbs-up" : "thumbs-up-outline"} 
+                  <Ionicons
+                    name={hasLiked ? 'thumbs-up' : 'thumbs-up-outline'}
                     size={24} 
-                    color={hasLiked ? "#007AFF" : "#65676B"} 
+                    color={hasLiked ? '#007AFF' : '#65676B'}
                   />
                   {likeCount > 0 && <Text style={styles.actionCount}>{likeCount}</Text>}
                 </TouchableOpacity>
 
-                {/* COMMENT BUBBLE - TOGGLES THE WHOLE SECTION */}
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.actionButton}
                   onPress={() => {
                     setActiveCommentPostId(isCommenting ? null : item.id);
-                    setCommentText(''); // Clear input when switching posts
+                    setCommentText('');
                   }}
                 >
-                  <Ionicons name="chatbubble-outline" size={24} color={isCommenting ? "#007AFF" : "#65676B"} />
+                  <Ionicons name="chatbubble-outline" size={24} color={isCommenting ? '#007AFF' : '#65676B'} />
                   {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
                 </TouchableOpacity>
               </View>
 
-              {/* CAPTION */}
               <Text style={styles.caption}>
                 <Text style={styles.boldText}>@{item.author?.username} </Text>
                 {item.caption}
               </Text>
 
-              {/* 👇 COMMENT SECTION (Only visible if the bubble is clicked) 👇 */}
               {isCommenting && (
                 <View style={styles.commentsWrapper}>
-                  
-                  {/* LIST OF COMMENTS */}
-                  {item.comments?.length > 0 ? (
-                    item.comments.map((comment: any) => (
+                  {item.comments && item.comments.length > 0 ? (
+                    item.comments.map((comment) => (
                       <Text key={comment.id} style={styles.comment}>
                         <Text style={styles.boldText}>@{comment.author?.username} </Text>
                         {comment.text}
@@ -121,29 +188,28 @@ export default function FeedScreen() {
                     <Text style={styles.noCommentsText}>No comments yet.</Text>
                   )}
 
-                  {/* INPUT TO WRITE NEW COMMENT */}
                   <View style={styles.addCommentContainer}>
                     <TextInput
                       style={styles.commentInput}
                       placeholder="Write a comment..."
                       value={commentText}
                       onChangeText={setCommentText}
-                      autoFocus
                     />
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       onPress={() => {
                         if (commentText.trim()) {
                           commentMutation.mutate({ postId: item.id, text: commentText });
                         }
                       }}
+                      disabled={!commentText.trim() || commentMutation.isPending}
                     >
-                      <Text style={styles.postButton}>Post</Text>
+                      <Text style={[styles.postButton, (!commentText.trim() || commentMutation.isPending) && styles.disabledButton]}>
+                        {commentMutation.isPending ? 'Posting...' : 'Post'}
+                      </Text>
                     </TouchableOpacity>
                   </View>
-
                 </View>
               )}
-
             </View>
           );
         }}
@@ -155,6 +221,15 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f2f2' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  feedHeader: { paddingHorizontal: 15, paddingTop: 16, paddingBottom: 8 },
+  feedTitle: { fontSize: 26, fontWeight: 'bold', color: '#1C1E21', marginBottom: 14 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 12, height: 46 },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 15 },
+  sortRow: { flexDirection: 'row', marginTop: 12, marginBottom: 4 },
+  sortButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18, backgroundColor: '#fff', marginRight: 8 },
+  sortButtonActive: { backgroundColor: '#007AFF' },
+  sortButtonText: { color: '#65676B', fontWeight: '600' },
+  sortButtonTextActive: { color: '#fff' },
   postCard: { backgroundColor: '#fff', marginBottom: 15, paddingBottom: 10 },
   header: { flexDirection: 'row', alignItems: 'center', padding: 15 },
   avatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#ccc', marginRight: 10 },
@@ -164,8 +239,6 @@ const styles = StyleSheet.create({
   actionButton: { flexDirection: 'row', alignItems: 'center', marginRight: 25 },
   actionCount: { marginLeft: 5, fontSize: 14, fontWeight: 'bold', color: '#65676B' },
   caption: { paddingHorizontal: 15, fontSize: 15, marginTop: 5 },
-  
-  // NEW STYLES FOR THE HIDDEN COMMENT SECTION
   commentsWrapper: {
     paddingHorizontal: 15,
     paddingTop: 10,
@@ -178,5 +251,9 @@ const styles = StyleSheet.create({
   addCommentContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 5, paddingBottom: 5 },
   commentInput: { flex: 1, backgroundColor: '#f0f2f5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8, marginRight: 10 },
   postButton: { color: '#007AFF', fontWeight: 'bold' },
+  disabledButton: { opacity: 0.45 },
+  emptyText: { color: '#65676B', textAlign: 'center', paddingHorizontal: 24, paddingVertical: 32, fontSize: 15 },
+  errorText: { color: '#333', fontSize: 16, marginBottom: 12 },
+  retryButton: { color: '#007AFF', fontWeight: 'bold', fontSize: 16 },
   boldText: { fontWeight: 'bold' },
 });
