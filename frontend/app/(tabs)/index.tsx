@@ -1,7 +1,8 @@
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, RefreshControl, Share, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import api from '../../services/api';
 import { API_URL } from '../../constants/config';
 import { useAuth } from '../../context/AuthContext';
@@ -23,6 +24,38 @@ export default function FeedScreen() {
   const [commentText, setCommentText] = useState('');
   const [searchText, setSearchText] = useState('');
   const [sortMode, setSortMode] = useState<'recent' | 'popular'>('recent');
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
+  const [savedPostIds, setSavedPostIds] = useState<string[]>([]);
+  const [savedPostsLoaded, setSavedPostsLoaded] = useState(false);
+  const [savingPostId, setSavingPostId] = useState<string | null>(null);
+  const savedPostsKey = `savedPosts:${user?.id ?? 'guest'}`;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    SecureStore.getItemAsync(savedPostsKey)
+      .then((savedPosts) => {
+        if (!isMounted) return;
+        if (savedPosts) {
+          const parsed: unknown = JSON.parse(savedPosts);
+          if (!Array.isArray(parsed) || !parsed.every((id) => typeof id === 'string')) {
+            throw new Error('Saved posts data has an invalid format.');
+          }
+          setSavedPostIds(parsed);
+        }
+        setSavedPostsLoaded(true);
+      })
+      .catch((error: unknown) => {
+        if (!isMounted) return;
+        console.error('Unable to load saved posts:', error);
+        Alert.alert('Saved posts unavailable', 'Your saved posts could not be loaded.');
+        setSavedPostsLoaded(true);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [savedPostsKey]);
 
   const { data: posts = [], isLoading, isError, isRefetching, refetch } = useQuery<FeedPost[]>({
     queryKey: ['posts'],
@@ -35,6 +68,7 @@ export default function FeedScreen() {
   const visiblePosts = useMemo(() => {
     const query = searchText.trim().toLocaleLowerCase();
     const filteredPosts = posts.filter((post) =>
+      (!showSavedOnly || savedPostIds.includes(post.id)) &&
       `${post.caption ?? ''} ${post.author?.username ?? ''}`.toLocaleLowerCase().includes(query),
     );
 
@@ -46,7 +80,40 @@ export default function FeedScreen() {
 
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [posts, searchText, sortMode]);
+  }, [posts, searchText, sortMode, showSavedOnly, savedPostIds]);
+
+  const toggleSavedPost = async (postId: string) => {
+    if (savingPostId) return;
+    setSavingPostId(postId);
+    const nextSavedPostIds = savedPostIds.includes(postId)
+      ? savedPostIds.filter((id) => id !== postId)
+      : [...savedPostIds, postId];
+
+    try {
+      await SecureStore.setItemAsync(savedPostsKey, JSON.stringify(nextSavedPostIds));
+      setSavedPostIds(nextSavedPostIds);
+    } catch (error) {
+      console.error('Unable to update saved posts:', error);
+      Alert.alert('Could not save post', 'Please try again.');
+    } finally {
+      setSavingPostId(null);
+    }
+  };
+
+  const sharePost = async (post: FeedPost) => {
+    const imageUrl = post.imageUrl.replace('http://localhost:3000', API_URL);
+    const caption = post.caption?.trim();
+    const message = [`Post by @${post.author?.username ?? 'user'}`, caption, imageUrl]
+      .filter(Boolean)
+      .join('\n\n');
+
+    try {
+      await Share.share({ message });
+    } catch (error) {
+      console.error('Unable to share post:', error);
+      Alert.alert('Could not share post', 'Please try again.');
+    }
+  };
 
   const likeMutation = useMutation({
     mutationFn: async ({ postId, isLiked }: { postId: string, isLiked: boolean }) => {
@@ -66,7 +133,7 @@ export default function FeedScreen() {
     },
   });
 
-  if (isLoading) return <View style={styles.center}><ActivityIndicator size="large" /></View>;
+  if (isLoading || !savedPostsLoaded) return <View style={styles.center}><ActivityIndicator size="large" /></View>;
 
   if (isError) {
     return (
@@ -121,12 +188,24 @@ export default function FeedScreen() {
                   </Text>
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity
+                style={[styles.sortButton, showSavedOnly && styles.sortButtonActive]}
+                onPress={() => setShowSavedOnly((current) => !current)}
+              >
+                <Text style={[styles.sortButtonText, showSavedOnly && styles.sortButtonTextActive]}>
+                  Saved
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         }
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {searchText.trim() ? 'No posts match your search.' : 'No posts yet. Be the first to share!'}
+            {showSavedOnly
+              ? 'No saved posts here yet. Tap the bookmark on a post to keep it for later.'
+              : searchText.trim()
+                ? 'No posts match your search.'
+                : 'No posts yet. Be the first to share!'}
           </Text>
         }
         renderItem={({ item }) => {
@@ -167,6 +246,25 @@ export default function FeedScreen() {
                 >
                   <Ionicons name="chatbubble-outline" size={24} color={isCommenting ? '#007AFF' : '#65676B'} />
                   {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => { void sharePost(item); }}
+                  accessibilityLabel="Share post"
+                >
+                  <Ionicons name="share-social-outline" size={23} color="#65676B" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => { void toggleSavedPost(item.id); }}
+                  disabled={savingPostId === item.id}
+                  accessibilityLabel={savedPostIds.includes(item.id) ? 'Remove saved post' : 'Save post'}
+                >
+                  <Ionicons
+                    name={savedPostIds.includes(item.id) ? 'bookmark' : 'bookmark-outline'}
+                    size={23}
+                    color={savedPostIds.includes(item.id) ? '#007AFF' : '#65676B'}
+                  />
                 </TouchableOpacity>
               </View>
 
