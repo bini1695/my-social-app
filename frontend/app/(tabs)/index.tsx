@@ -1,7 +1,7 @@
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, RefreshControl, Share, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, Pressable, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, RefreshControl, Share, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import api from '../../services/api';
 import { API_URL } from '../../constants/config';
@@ -28,6 +28,7 @@ export default function FeedScreen() {
   const [savedPostIds, setSavedPostIds] = useState<string[]>([]);
   const [savedPostsLoaded, setSavedPostsLoaded] = useState(false);
   const [savingPostId, setSavingPostId] = useState<string | null>(null);
+  const lastImageTap = useRef<{ postId: string; timestamp: number } | null>(null);
   const savedPostsKey = `savedPosts:${user?.id ?? 'guest'}`;
 
   useEffect(() => {
@@ -221,7 +222,25 @@ export default function FeedScreen() {
                 <Text style={styles.username}>@{item.author?.username}</Text>
               </View>
 
-              <Image source={{ uri: item.imageUrl.replace('http://localhost:3000', API_URL) }} style={styles.image} />
+              <Pressable
+                onPress={() => {
+                  const now = Date.now();
+                  const previousTap = lastImageTap.current;
+                  if (previousTap?.postId === item.id && now - previousTap.timestamp < 300) {
+                    lastImageTap.current = null;
+                    if (!hasLiked && !likeMutation.isPending) {
+                      likeMutation.mutate({ postId: item.id, isLiked: false });
+                    }
+                    return;
+                  }
+                  lastImageTap.current = { postId: item.id, timestamp: now };
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Photo by @${item.author?.username ?? 'user'}`}
+                accessibilityHint="Double tap quickly to like this post."
+              >
+                <Image source={{ uri: item.imageUrl.replace('http://localhost:3000', API_URL) }} style={styles.image} />
+              </Pressable>
 
               <View style={styles.actionRow}>
                 <TouchableOpacity
