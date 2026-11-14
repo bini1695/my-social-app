@@ -1,6 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import * as SecureStore from 'expo-secure-store';
-
+import { storage } from '../services/storage';
 interface AuthContextData {
   user: any | null;
   token: string | null;
@@ -16,8 +15,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const loadStorageData = async () => {
-      const storedToken = await SecureStore.getItemAsync('userToken');
-      const storedUser = await SecureStore.getItemAsync('userData');
+      const storedToken = await storage.getItem('userToken');
+      const storedUser = await storage.getItem('userData');
       if (storedToken && storedUser) {
         setToken(storedToken);
         setUser(JSON.parse(storedUser));
@@ -27,15 +26,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const login = async (newToken: string, newUser: any) => {
-    await SecureStore.setItemAsync('userToken', newToken);
-    await SecureStore.setItemAsync('userData', JSON.stringify(newUser));
+    await storage.setItem('userToken', newToken);
+    await storage.setItem('userData', JSON.stringify(newUser));
     setToken(newToken);
     setUser(newUser);
   };
 
   const logout = async () => {
-    await SecureStore.deleteItemAsync('userToken');
-    await SecureStore.deleteItemAsync('userData');
+    await storage.removeItem('userToken');
+    await storage.removeItem('userData');
     setToken(null);
     setUser(null);
   };
