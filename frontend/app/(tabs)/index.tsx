@@ -1,8 +1,8 @@
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, Pressable, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, RefreshControl, Share, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, Pressable, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, RefreshControl, Share, Alert, ScrollView } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from '../../services/storage';
 import api from '../../services/api';
 import { API_URL } from '../../constants/config';
 import { useAuth } from '../../context/AuthContext';
@@ -23,6 +23,7 @@ export default function FeedScreen() {
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const [searchText, setSearchText] = useState('');
+  const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<'recent' | 'popular'>('recent');
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [savedPostIds, setSavedPostIds] = useState<string[]>([]);
@@ -34,7 +35,7 @@ export default function FeedScreen() {
   useEffect(() => {
     let isMounted = true;
 
-    SecureStore.getItemAsync(savedPostsKey)
+    storage.getItem(savedPostsKey)
       .then((savedPosts) => {
         if (!isMounted) return;
         if (savedPosts) {
@@ -66,10 +67,16 @@ export default function FeedScreen() {
     },
   });
 
+  const creators = useMemo(
+    () => [...new Set(posts.map((post) => post.author?.username).filter((username): username is string => Boolean(username)))].slice(0, 12),
+    [posts],
+  );
+
   const visiblePosts = useMemo(() => {
     const query = searchText.trim().toLocaleLowerCase();
     const filteredPosts = posts.filter((post) =>
       (!showSavedOnly || savedPostIds.includes(post.id)) &&
+      (!selectedAuthor || post.author?.username === selectedAuthor) &&
       `${post.caption ?? ''} ${post.author?.username ?? ''}`.toLocaleLowerCase().includes(query),
     );
 
@@ -81,7 +88,7 @@ export default function FeedScreen() {
 
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [posts, searchText, sortMode, showSavedOnly, savedPostIds]);
+  }, [posts, searchText, selectedAuthor, sortMode, showSavedOnly, savedPostIds]);
 
   const toggleSavedPost = async (postId: string) => {
     if (savingPostId) return;
@@ -91,7 +98,7 @@ export default function FeedScreen() {
       : [...savedPostIds, postId];
 
     try {
-      await SecureStore.setItemAsync(savedPostsKey, JSON.stringify(nextSavedPostIds));
+      await storage.setItem(savedPostsKey, JSON.stringify(nextSavedPostIds));
       setSavedPostIds(nextSavedPostIds);
     } catch (error) {
       console.error('Unable to update saved posts:', error);
@@ -177,6 +184,50 @@ export default function FeedScreen() {
                 </TouchableOpacity>
               )}
             </View>
+            <View style={styles.creatorHeading}>
+              <Text style={styles.creatorTitle}>Discover people</Text>
+              <Text style={styles.creatorHint}>Tap to filter your feed</Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.creatorList}
+            >
+              <TouchableOpacity
+                style={styles.creatorItem}
+                onPress={() => setSelectedAuthor(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Show posts from everyone"
+                accessibilityState={{ selected: selectedAuthor === null }}
+              >
+                <View style={[styles.creatorAvatar, selectedAuthor === null && styles.creatorAvatarSelected]}>
+                  <Ionicons name="people" size={22} color={selectedAuthor === null ? '#1877F2' : '#65676B'} />
+                </View>
+                <Text style={[styles.creatorName, selectedAuthor === null && styles.creatorNameSelected]}>Everyone</Text>
+              </TouchableOpacity>
+              {creators.map((username) => {
+                const isSelected = selectedAuthor === username;
+                return (
+                  <TouchableOpacity
+                    key={username}
+                    style={styles.creatorItem}
+                    onPress={() => setSelectedAuthor(isSelected ? null : username)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Show posts by @${username}`}
+                    accessibilityState={{ selected: isSelected }}
+                  >
+                    <View style={[styles.creatorAvatar, isSelected && styles.creatorAvatarSelected]}>
+                      <Text style={[styles.creatorInitial, isSelected && styles.creatorNameSelected]}>
+                        {username.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={[styles.creatorName, isSelected && styles.creatorNameSelected]} numberOfLines={1}>
+                      @{username}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
             <View style={styles.sortRow}>
               {(['recent', 'popular'] as const).map((mode) => (
                 <TouchableOpacity
@@ -204,6 +255,8 @@ export default function FeedScreen() {
           <Text style={styles.emptyText}>
             {showSavedOnly
               ? 'No saved posts here yet. Tap the bookmark on a post to keep it for later.'
+              : selectedAuthor
+                ? `No posts by @${selectedAuthor} match these filters.`
               : searchText.trim()
                 ? 'No posts match your search.'
                 : 'No posts yet. Be the first to share!'}
@@ -342,6 +395,16 @@ const styles = StyleSheet.create({
   feedTitle: { fontSize: 26, fontWeight: 'bold', color: '#1C1E21', marginBottom: 14 },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 12, height: 46 },
   searchInput: { flex: 1, marginLeft: 8, fontSize: 15 },
+  creatorHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 },
+  creatorTitle: { fontSize: 15, fontWeight: '700', color: '#1C1E21' },
+  creatorHint: { fontSize: 12, color: '#8A8D91' },
+  creatorList: { paddingVertical: 10 },
+  creatorItem: { alignItems: 'center', width: 68, marginRight: 8 },
+  creatorAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#E8EDF4', borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  creatorAvatarSelected: { backgroundColor: '#EAF3FF', borderColor: '#1877F2' },
+  creatorInitial: { color: '#465365', fontSize: 18, fontWeight: '700' },
+  creatorName: { color: '#65676B', fontSize: 11, marginTop: 4, maxWidth: 68 },
+  creatorNameSelected: { color: '#1877F2', fontWeight: '700' },
   sortRow: { flexDirection: 'row', marginTop: 12, marginBottom: 4 },
   sortButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18, backgroundColor: '#fff', marginRight: 8 },
   sortButtonActive: { backgroundColor: '#007AFF' },
