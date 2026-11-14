@@ -1,69 +1,111 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
+import axios from 'axios';
 import api from '../../services/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { API_URL } from '../../constants/config';
 
 export default function CreatePostScreen() {
   const [caption, setCaption] = useState('');
-  const [image, setImage] = useState<string | null>(null);
+  const [image, setImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const queryClient = useQueryClient();
 
   const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], // Fixed the deprecated warning
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
 
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
+      if (!result.canceled) {
+        setImage(result.assets[0]);
+      }
+    } catch (error) {
+      console.error('Unable to select an image:', error);
+      Alert.alert('Could not select image', 'Please try again.');
     }
   };
 
   const handlePost = async () => {
     if (!image) return Alert.alert('Error', 'Please select an image');
     setIsLoading(true);
+    let failedStep = 'Uploading image';
 
     try {
       const formData = new FormData();
-      // @ts-ignore
-      formData.append('file', {
-        uri: image,
-        type: 'image/jpeg',
-        name: 'upload.jpg',
-      });
+      const mimeType = image.mimeType ?? image.file?.type ?? 'image/jpeg';
+      const extensionByMimeType: Record<string, string> = {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'image/heic': 'heic',
+        'image/heif': 'heif',
+        'image/avif': 'avif',
+      };
+      const fileName = image.fileName ?? image.file?.name ?? `upload.${extensionByMimeType[mimeType] ?? 'jpg'}`;
 
-      // 1. Upload Image
+      if (Platform.OS === 'web') {
+        let file: Blob;
+        if (image.file) {
+          file = image.file;
+        } else {
+          const response = await fetch(image.uri);
+          if (!response.ok) throw new Error('Could not read the selected image. Please select it again.');
+          file = await response.blob();
+        }
+        formData.append('file', file, fileName);
+      } else {
+        // @ts-expect-error React Native FormData accepts URI-backed file parts.
+        formData.append('file', {
+          uri: image.uri,
+          type: mimeType,
+          name: fileName,
+        });
+      }
+
       const uploadResponse = await api.post('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000,
       });
 
-      let imageUrl = uploadResponse.data.imageUrl;
-      
-      // CRITICAL FIX: Replace 'localhost' with your actual API_URL so the phone can see the image
-      imageUrl = imageUrl.replace('http://localhost:3000', API_URL);
+      const uploadedImageUrl = uploadResponse.data?.imageUrl;
+      if (typeof uploadedImageUrl !== 'string' || !uploadedImageUrl) {
+        throw new Error('The server did not return an image URL.');
+      }
+      const imageUrl = uploadedImageUrl.replace('http://localhost:3000', API_URL);
 
-      // 2. Create Post in Database
+      failedStep = 'Saving post';
       await api.post('/posts', { caption, imageUrl });
 
-      // 3. Success
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      await queryClient.invalidateQueries({ queryKey: ['posts'] });
       setCaption('');
       setImage(null);
-      setIsLoading(false);
       Alert.alert('Success', 'Post created!');
-      router.push('/(tabs)');
-      
+      router.replace('/(tabs)');
+
     } catch (error: any) {
+      console.error('Unable to create post:', error);
+
+      // Better error message for the popup
+      let message = 'Please try again.';
+      if (axios.isAxiosError(error)) {
+        const data = error.response?.data;
+        message = data?.message
+          ? (Array.isArray(data.message) ? data.message.join('\n') : data.message)
+          : error.message;
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+
+      Alert.alert('Could not create post', `${failedStep}: ${message}`);
+    } finally {
       setIsLoading(false);
-      console.log("FULL ERROR:", error.response?.data || error.message);
-      Alert.alert('Error', error.response?.data?.message || 'Failed to create post. Check console.');
     }
   };
 
@@ -71,7 +113,7 @@ export default function CreatePostScreen() {
     <View style={styles.container}>
       <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
         {image ? (
-          <Image source={{ uri: image }} style={styles.image} />
+          <Image source={{ uri: image.uri }} style={styles.image} />
         ) : (
           <Text style={styles.imageText}>Tap to select an image</Text>
         )}
