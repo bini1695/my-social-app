@@ -17,8 +17,8 @@ export class UploadController {
       },
     }),
     fileFilter: (req, file, cb) => {
-      if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
-        return cb(new BadRequestException('Only image files are allowed!'), false);
+      if (!/\.(jpe?g|png|gif|webp|heic|heif|avif)$/i.test(file.originalname)) {
+        return cb(new BadRequestException('Use a JPG, PNG, GIF, WebP, HEIC, HEIF, or AVIF image.'), false);
       }
       cb(null, true);
     },
@@ -26,7 +26,7 @@ export class UploadController {
   }))
   uploadFile(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
-      throw new BadRequestException('File is not an image or too large');
+      throw new BadRequestException('The image is missing, unsupported, or larger than 5 MB.');
     }
     // Return the URL path for the frontend to use
     return { imageUrl: `http://localhost:3000/uploads/${file.filename}` };
