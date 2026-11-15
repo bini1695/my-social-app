@@ -6,12 +6,12 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#1877F2',
+        tabBarActiveTintColor: '#6C5CE7',
         tabBarInactiveTintColor: '#7B8492',
         tabBarLabelStyle: styles.tabLabel,
         tabBarItemStyle: styles.tabItem,
         tabBarStyle: styles.tabBar,
-        headerShown: true,
+        headerShown: false,
         headerStyle: styles.header,
         headerTitleStyle: styles.headerTitle,
         headerShadowVisible: false,
@@ -21,10 +21,23 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Your feed',
+          headerShown: false,
           tabBarAccessibilityLabel: 'Feed',
           tabBarIcon: ({ focused }) => (
             <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
               <Ionicons name={focused ? 'home' : 'home-outline'} size={21} color={focused ? '#1877F2' : '#7B8492'} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: 'Explore',
+          tabBarAccessibilityLabel: 'Explore',
+          tabBarIcon: ({ focused }) => (
+            <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+              <Ionicons name={focused ? 'search' : 'search-outline'} size={21} color={focused ? '#6C5CE7' : '#7B8492'} />
             </View>
           ),
         }}
@@ -42,13 +55,25 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'Messages',
+          tabBarAccessibilityLabel: 'Messages',
+          tabBarIcon: ({ focused }) => (
+            <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+              <Ionicons name={focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'} size={20} color={focused ? '#6C5CE7' : '#7B8492'} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Your profile',
           tabBarAccessibilityLabel: 'Profile',
           tabBarIcon: ({ focused }) => (
             <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
-              <Ionicons name={focused ? 'person' : 'person-outline'} size={21} color={focused ? '#1877F2' : '#7B8492'} />
+              <Ionicons name={focused ? 'person' : 'person-outline'} size={21} color={focused ? '#6C5CE7' : '#7B8492'} />
             </View>
           ),
         }}
@@ -81,7 +106,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconWrapActive: { backgroundColor: '#EAF3FF' },
+  iconWrapActive: { backgroundColor: '#EFEDFF' },
   createIcon: {
     width: 42,
     height: 42,
@@ -89,10 +114,10 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1877F2',
+    backgroundColor: '#6C5CE7',
     borderWidth: 3,
     borderColor: '#fff',
     elevation: 3,
   },
-  createIconActive: { backgroundColor: '#0866FF', transform: [{ scale: 1.08 }] },
+  createIconActive: { backgroundColor: '#5145CD', transform: [{ scale: 1.08 }] },
 });
