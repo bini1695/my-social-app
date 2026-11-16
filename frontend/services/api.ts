@@ -4,6 +4,7 @@ import { storage } from './storage';
 
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 10000,
 });
 
 api.interceptors.request.use(async (config) => {
