@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { storage } from '../../services/storage';
 import api from '../../services/api';
 import { API_URL } from '../../constants/config';
+import { COLORS } from '../../constants/theme';
 import { useAuth } from '../../context/AuthContext';
 
 type FeedPost = {
@@ -586,7 +587,7 @@ export default function FeedScreen() {
             </TouchableOpacity>
 
             <View style={[styles.drawerDivider, styles.drawerBottomDivider]} />
-            <TouchableOpacity style={styles.drawerItem} onPress={() => Alert.alert('Settings', 'Account settings are coming soon.')}>
+            <TouchableOpacity style={styles.drawerItem} onPress={() => { setIsDrawerVisible(false); router.push('/(tabs)/settings'); }}>
               <Ionicons name="settings-outline" size={19} color="#C4C6D2" />
               <Text style={styles.drawerItemText}>Settings</Text>
             </TouchableOpacity>
@@ -691,7 +692,7 @@ const styles = StyleSheet.create({
   drawerItem: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 10, borderRadius: 12 },
   drawerItemActive: { flex: 1, color: '#fff', fontSize: 13, fontWeight: '700', backgroundColor: '#6C5CE7', marginRight: -4, marginVertical: 5, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 10, overflow: 'hidden' },
   drawerItemText: { flex: 1, color: '#C4C6D2', fontSize: 13, fontWeight: '500' },
-  notificationBadge: { width: 17, height: 17, borderRadius: 9, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
+  notificationBadge: { width: 17, height: 17, borderRadius: 9, backgroundColor: COLORS.danger, alignItems: 'center', justifyContent: 'center' },
   notificationBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   logoutItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 42, borderRadius: 21, marginTop: 'auto', borderWidth: 1, borderColor: '#383A50' },
   logoutText: { color: '#D9D5F9', fontSize: 12, fontWeight: '600' },
